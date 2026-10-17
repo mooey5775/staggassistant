@@ -105,5 +105,9 @@ class StaggSelect(CoordinatorEntity, SelectEntity):
                     response.raise_for_status()
             except Exception as err:
                 _LOGGER.error("Failed to select option %s for %s: %s", option, self._key, err)
-                
+
+        # Firmware 1.2.26+ doesn't report Repeat_sched, so the coordinator tracks it
+        if self._key == "schedule_mode" and option != "off":
+            self.coordinator.schedule_repeat = option == "repeat"
+
         await self.coordinator.async_request_refresh()
