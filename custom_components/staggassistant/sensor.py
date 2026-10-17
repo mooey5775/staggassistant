@@ -5,7 +5,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfTemperature, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfTemperature, UnitOfTime
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -23,14 +23,18 @@ async def async_setup_entry(hass, entry, async_add_entities):
         StaggSensor(coordinator, entry, "clock_time", "Clock Time", None, None, "mdi:clock-time-eight-outline"),
         StaggSensor(coordinator, entry, "schedule_time", "Schedule Time", None, None, "mdi:calendar-clock-outline"),
         StaggSensor(coordinator, entry, "schedule_temperature", "Schedule Temperature", SensorDeviceClass.TEMPERATURE, None, "mdi:thermometer-auto"),
+        StaggSensor(coordinator, entry, "eta_minutes", "Time to Target", SensorDeviceClass.DURATION, UnitOfTime.MINUTES, "mdi:timer-sand-complete"),
+        StaggSensor(coordinator, entry, "heating_rate", "Heating Rate", None, None, "mdi:thermometer-chevron-up", EntityCategory.DIAGNOSTIC),
+        StaggSensor(coordinator, entry, "pwm", "Heater PWM", None, None, "mdi:sine-wave", EntityCategory.DIAGNOSTIC),
+        StaggSensor(coordinator, entry, "firmware_version", "Firmware Version", None, None, "mdi:chip", EntityCategory.DIAGNOSTIC),
     ]
-    
+
     async_add_entities(sensors, True)
 
 class StaggSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Stagg EKG Pro sensor."""
 
-    def __init__(self, coordinator, entry, sensor_type, name_suffix, device_class, unit_of_measurement, icon):
+    def __init__(self, coordinator, entry, sensor_type, name_suffix, device_class, unit_of_measurement, icon, entity_category=None):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._type = sensor_type
@@ -39,6 +43,7 @@ class StaggSensor(CoordinatorEntity, SensorEntity):
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit_of_measurement
         self._attr_icon = icon
+        self._attr_entity_category = entity_category
         self._attr_has_entity_name = False
 
         self._attr_device_info = {
@@ -67,15 +72,17 @@ class StaggSensor(CoordinatorEntity, SensorEntity):
             return self.coordinator.data.get("clock_time")
         elif self._type == "schedule_time":
             return self.coordinator.data.get("schedule_time")
-        elif self._type == "schedule_temperature":
-            return self.coordinator.data.get("schedule_temperature")
+        elif self._type in ("schedule_temperature", "eta_minutes", "heating_rate", "pwm", "firmware_version"):
+            return self.coordinator.data.get(self._type)
 
         return None
 
     @property
     def native_unit_of_measurement(self):
         """Return the unit of measurement."""
-        if self._type in ("current_temp", "target_temp"):
-            unit = self.coordinator.data.get("units", "C") if self.coordinator.data else "C"
+        if self._type in ("current_temp", "target_temp", "heating_rate"):
+            unit = self.coordinator.data.get("temp_units", "C") if self.coordinator.data else "C"
+            if self._type == "heating_rate":
+                return f"{UnitOfTemperature.FAHRENHEIT if unit == 'F' else UnitOfTemperature.CELSIUS}/min"
             return UnitOfTemperature.FAHRENHEIT if unit == "F" else UnitOfTemperature.CELSIUS
         return self._attr_native_unit_of_measurement

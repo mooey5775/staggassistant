@@ -4,7 +4,9 @@ import logging
 import re
 import struct
 import async_timeout
+from collections import deque
 from datetime import timedelta
+from time import monotonic
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -28,6 +30,12 @@ MASK_UNITS_C = 0x0200
 MASK_BOIL = 0x0400
 MASK_BOIL_ON = 0x0800
 MASK_LANGUAGE = 0x1000
+
+# Heating rate is the temperature slope over this window while heating
+HEAT_RATE_WINDOW_SECONDS = 90
+HEAT_RATE_MIN_SPAN_SECONDS = 30
+# Re-read the firmware version occasionally so a silent OTA update shows up
+FIRMWARE_CHECK_INTERVAL_SECONDS = 600
 
 
 def parse_float(value):
@@ -95,6 +103,9 @@ class StaggLinkCoordinator(DataUpdateCoordinator):
         self.session = async_get_clientsession(hass)
         # Firmware 1.2.26+ doesn't report once vs. repeat, so remember the last mode we set
         self.schedule_repeat = None
+        self._heat_samples = deque()
+        self._firmware_version = None
+        self._firmware_checked_at = None
 
     async def _async_update_data(self):
         """Fetch data from the kettle, preferring the native API of newer firmware."""
@@ -103,11 +114,67 @@ class StaggLinkCoordinator(DataUpdateCoordinator):
                 data = await self._read_native()
                 if data is None:
                     data = await self._read_legacy()
-                return data
+                await self._refresh_firmware_version()
         except UpdateFailed:
             raise
         except Exception as err:
             raise UpdateFailed(f"Connection error: {err}")
+
+        self._add_derived(data)
+        return data
+
+    async def _refresh_firmware_version(self):
+        """Read the firmware version from the kettle's status page."""
+        now = monotonic()
+        if self._firmware_checked_at is not None and now - self._firmware_checked_at < FIRMWARE_CHECK_INTERVAL_SECONDS:
+            return
+        self._firmware_checked_at = now
+        try:
+            response = await self.session.get(f"http://{self.ip}/")
+            response.raise_for_status()
+            match = re.search(r'Current version:\s*([^\s<]+)', await response.text())
+            if match:
+                self._firmware_version = match.group(1)
+        except Exception as err:
+            _LOGGER.debug("Could not read firmware version: %s", err)
+
+    def _add_derived(self, data):
+        """Add values computed from the raw readings."""
+        temp = data["temp"]
+        target = data["target"]
+        mode = (data["mode"] or "").upper()
+        heating = "HEAT" in mode or "HIGH" in mode
+
+        # The probe reads nan while the kettle is lifted off its base
+        data["on_base"] = temp is not None
+        data["no_water"] = mode == "S_NOWATER"
+        data["water_ready"] = mode == "S_HOLD" or (
+            mode != "S_OFF" and temp is not None and target is not None and temp >= target - 0.5
+        )
+        data["firmware_version"] = self._firmware_version
+
+        now = monotonic()
+        if heating and temp is not None:
+            self._heat_samples.append((now, temp))
+            while now - self._heat_samples[0][0] > HEAT_RATE_WINDOW_SECONDS:
+                self._heat_samples.popleft()
+        else:
+            self._heat_samples.clear()
+
+        rate = None
+        if len(self._heat_samples) >= 2:
+            (t0, temp0), (t1, temp1) = self._heat_samples[0], self._heat_samples[-1]
+            if t1 - t0 >= HEAT_RATE_MIN_SPAN_SECONDS:
+                rate = round((temp1 - temp0) / (t1 - t0) * 60, 2)
+        data["heating_rate"] = rate
+
+        eta = None
+        if heating and temp is not None and target is not None:
+            if temp >= target:
+                eta = 0
+            elif rate and rate > 0:
+                eta = round((target - temp) / rate, 1)
+        data["eta_minutes"] = eta
 
     async def _read_native(self):
         """Read state and settings from firmware 1.2.26+, or return None on older firmware."""
@@ -144,6 +211,9 @@ class StaggLinkCoordinator(DataUpdateCoordinator):
             "temp": parse_float(status.get("temp")),
             "target": parse_float(status.get("temp_set")),
             "mode": status["state"],
+            # /temp always reports Celsius, whatever the display units
+            "temp_units": "C",
+            "pwm": status.get("pwm"),
             "hold_time_minutes": settings.get("hold", 30),
             "hold_enabled": 1 if hold > 0 else 0,
             "pre_boil_enabled": settings.get("boil", 0),
@@ -236,6 +306,8 @@ class StaggLinkCoordinator(DataUpdateCoordinator):
             "temp": parse_float(temp_match.group(1)),
             "target": parse_float(target_match.group(1)),
             "mode": mode_match.group(1),
+            "temp_units": "C" if get_setting_value("units", 1) == 1 else "F",
+            "pwm": None,
             "hold_time_minutes": get_setting_value("hold", 30),
             "hold_enabled": 1 if get_setting_value("hold", 0) > 0 else 0,
             "pre_boil_enabled": get_setting_value("boil", 0),

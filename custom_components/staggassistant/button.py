@@ -19,6 +19,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         StaggButton(coordinator, entry, "rotate_left", "Rotate Dial Left", "mdi:rotate-left", "q"),
         StaggButton(coordinator, entry, "rotate_right", "Rotate Dial Right", "mdi:rotate-right", "w"),
         StaggButton(coordinator, entry, "long_press_2", "Start Timer", "mdi:timer-play", "_long_press_2"),
+        StaggButton(coordinator, entry, "keep_warm", "Keep Warm", "mdi:kettle-alert-outline", "ss+S_Hold"),
         StaggButton(coordinator, entry, "sync_time", "Sync Time", "mdi:clock-check-outline", "_sync_time"),
         StaggButton(coordinator, entry, "reload_data", "Reload Data", "mdi:refresh", "_reload"),
     ]

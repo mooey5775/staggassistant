@@ -20,7 +20,7 @@ This integration bypasses the need for an official API by communicating directly
 
 ## 📋 Available Entities & Controls
 
-The integration exposes **20 entities** to fully monitor and manage your kettle from Home Assistant:
+The integration exposes **31 entities** to fully monitor and manage your kettle from Home Assistant:
 
 | Platform | Entity | Description |
 | :--- | :--- | :--- |
@@ -31,6 +31,13 @@ The integration exposes **20 entities** to fully monitor and manage your kettle 
 | **`sensor`** | Clock Time | Current kettle clock time |
 | **`sensor`** | Schedule Time | Scheduled wake-up time (HH:MM) |
 | **`sensor`** | Schedule Temperature | Scheduled target temperature |
+| **`sensor`** | Time to Target | Estimated minutes until the water reaches the target while heating |
+| **`sensor`** | Heating Rate | Temperature rise per minute while heating (diagnostic) |
+| **`sensor`** | Heater PWM | Raw heater drive level reported by firmware 1.2.26+ (diagnostic) |
+| **`sensor`** | Firmware Version | Kettle firmware version, re-checked every 10 minutes (diagnostic) |
+| **`binary_sensor`** | On Base | Whether the kettle is sitting on its base |
+| **`binary_sensor`** | No Water | The kettle reports it is empty |
+| **`binary_sensor`** | Water Ready | The water has reached the target temperature or is being held |
 | **`switch`** | Pre-Boil | Toggle the pre-boil feature on/off |
 | **`number`** | Hold Time Duration | Set hold time duration in minutes (0–60) |
 | **`number`** | Altitude Setting | Set altitude for boil calibration (0–3000 m) |
@@ -44,6 +51,8 @@ The integration exposes **20 entities** to fully monitor and manage your kettle 
 | **`button`** | Rotate Dial Left | Rotate the dial counter-clockwise |
 | **`button`** | Rotate Dial Right | Rotate the dial clockwise |
 | **`button`** | Sync Time | Sync current Home Assistant system time to the kettle |
+| **`button`** | Start Timer | Long-press the main button to start the brew timer |
+| **`button`** | Keep Warm | Switch the kettle into hold (keep-warm) mode |
 | **`button`** | Reload Data | Force a manual data refresh from the kettle |
 
 ## 🚀 Installation
